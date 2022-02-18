@@ -40,8 +40,8 @@ contract EVB is IBEP20, Auth {
   address[] CouponAddress;
   mapping (address => uint256) CouponDiscount;
 
-  string constant _name = 'ETEST';
-  string constant _symbol = 'ETT';
+  string constant _name = 'Everburn';
+  string constant _symbol = 'EVB';
   uint8 constant _decimals = 18;
 
   uint256 _totalSupply = 1_000_000_000 * (10**_decimals);
