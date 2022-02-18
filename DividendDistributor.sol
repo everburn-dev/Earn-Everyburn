@@ -17,7 +17,7 @@ contract DividendDistributor is IDividendDistributor {
     uint256 totalRealised;
   }
 
-  IBEP20 Token1;
+  IBEP20 PT;
   address WAVAX;
   IDEXRouter router;
 
@@ -52,23 +52,13 @@ contract DividendDistributor is IDividendDistributor {
 
   constructor(
     address _router,
-    address _WETH,
+    address _WAVAX,
     address _printerToken
   ) {
     router = IDEXRouter(_router);
     _token = msg.sender;
-    WAVAX = _WETH;
-    Token1 = IBEP20(_printerToken);
-  }
-
-
-  function getMinPeriod() external view  returns (uint256) {
-    return minPeriod ;
-  }
-
-
-  function GetDistribution() external view  returns (uint256) {
-    return minDistribution ;
+    WAVAX = _WAVAX;
+    PT = IBEP20(_printerToken);
   }
 
   function setDistributionCriteria(uint256 _minPeriod, uint256 _minDistribution)
@@ -103,17 +93,17 @@ contract DividendDistributor is IDividendDistributor {
   }
 
   function deposit() external payable override onlyToken {
-    uint256 balanceBefore = Token1.balanceOf(address(this));
+    uint256 balanceBefore = PT.balanceOf(address(this));
 
     address[] memory path = new address[](2);
     path[0] = WAVAX;
-    path[1] = address(Token1);
+    path[1] = address(PT);
 
     router.swapExactETHForTokensSupportingFeeOnTransferTokens{
       value: msg.value
     }(0, path, address(this), block.timestamp);
 
-    uint256 amount = Token1.balanceOf(address(this)).sub(balanceBefore);
+    uint256 amount = PT.balanceOf(address(this)).sub(balanceBefore);
 
     totalDividends = totalDividends.add(amount);
     dividendsPerShare = dividendsPerShare.add(
@@ -163,10 +153,10 @@ contract DividendDistributor is IDividendDistributor {
     uint256 amount = getUnpaidEarnings(shareholder);
     if (amount > 0) {
       totalDistributed = totalDistributed.add(amount);
-      if (!compound && address(Token1) != _token) {
-        Token1.approve(address(router), amount);
+      if (compound && address(PT) != _token) {
+        PT.approve(address(router), amount);
         address[] memory path = new address[](3);
-        path[0] = address(Token1);
+        path[0] = address(PT);
         path[1] = WAVAX;
         path[2] = _token;
         router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
@@ -176,9 +166,8 @@ contract DividendDistributor is IDividendDistributor {
           shareholder,
           block.timestamp
         );
-      } 
-      else {
-        Token1.transfer(shareholder, amount);
+      } else {
+        PT.transfer(shareholder, amount);
       }
       shareholderClaims[shareholder] = block.timestamp;
       shares[shareholder].totalRealised = shares[shareholder].totalRealised.add(
@@ -224,6 +213,14 @@ returns the  unpaid earnings
     returns (uint256)
   {
     return share.mul(dividendsPerShare).div(dividendsPerShareAccuracyFactor);
+  }
+    function getMinPeriod() external view  returns (uint256) {
+    return minPeriod ;
+  }
+
+
+  function GetDistribution() external view  returns (uint256) {
+    return minDistribution ;
   }
 
   function addShareholder(address shareholder) internal {

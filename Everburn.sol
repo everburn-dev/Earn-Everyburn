@@ -5,75 +5,48 @@ import './IDEXFactory.sol';
 import './Auth.sol';
 import './DividendDistributor.sol';
 import './DEXAVAXRouter.sol';
+import './CheckBal.sol';
 
 
-
-/********************************************************************************************
-Everburn: $EVB
-
-
-Tokenomics:
-10% reflections paid in Ethereum
-3% tax for marketing/operations
-2% allocated to auto-liquidity
-5% burned
-
-Website:
-https://www.everburn.io
-// Contract 0x6f5b45ee3b98d86bea890f539faef4e3dd68b52f
-
-*/
-
-
-
-
-contract EVBT is IBEP20, Auth {
+contract EVB is IBEP20, Auth {
   using SafeMath for uint256;
 
   uint256 public constant MASK = type(uint128).max;
 
-  // ********************************************************************************
-  // ********************************************************************************
-  // ENVIRONMENT-SPECIFIC VARIABLES
-
-  // Most new DEX's out there are forks of Uniswap, and most implement
-  // the exact interfaces or very similar to what it has in order to function.
-  // For Trader Joe on AVAX, they use a similar API in their contracts except
-  // they change the names of some functions. See ./DEXAVAXRouter.sol for more info,
-  // but this boolean is used in order to use the appropriate interface/abstract
-  // contract when setting up this contract to support any DEX.
   bool isAVAX = false;
 
-  // DEX router
   // AVAX mainnet: 0x60aE616a2155Ee3d9A68541Ba4544862310933d4
   // Rinkeby: 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
   address constant ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
 
-  // "printer" token
-  // AVAX mainnet WETH: 0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB
-  // GoErli WETH: 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6
-
-
   // AVAX mainnet WAVAX: 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7
-  // GoErli WETH: 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6
+  // Rinkeby WETH: 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6
   address public WAVAX = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6;
   // ********************************************************************************
-  // ********************************************************************************
+  //USDT - AVAX 0xc7198437980c041c805A1EDcbA50c1Ce5db95118
   address public PrintToken1 = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6; // Token 1
-  address public PrintToken2 = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6; // Token 2
-  bool public PrintToken1Enabled = true;
-  bool public PrintToken2Enabled = false;
+  
   address DEAD = 0x000000000000000000000000000000000000dEaD;
   address ZERO = 0x0000000000000000000000000000000000000000;
 
-  string constant _name = 'EVBT7';
-  string constant _symbol = 'EVBT7';
+
+  address DexPoolAddress1 = ZERO;  //set DEX Address
+  address DexPoolAddress2 = ZERO;  
+  address DexPoolAddress3 = ZERO;  //Debug DEX
+  address DexPoolAddress4 = ZERO;  
+
+  bool useCoupon = true;
+  
+  address[] CouponAddress;
+  mapping (address => uint256) CouponDiscount;
+
+  string constant _name = 'ETEST';
+  string constant _symbol = 'ETT';
   uint8 constant _decimals = 18;
 
-  uint256 _totalSupply = 1_000_000_000_000_000 * (10**_decimals);
-  uint256 public _maxTxAmount = _totalSupply.div(40); // 2,5%
-  uint256 public _maxWallet = _totalSupply.div(40); // 2,5%
-
+  uint256 _totalSupply = 1_000_000_000 * (10**_decimals);
+  uint256 public _maxTxAmount = _totalSupply.div(1); // 2,5%  - launch 100 %
+  uint256 public _maxWallet = _totalSupply.div(1); // 2,5% - launch 100%
 
   mapping(address => uint256) _balances;
   mapping(address => mapping(address => uint256)) _allowances;
@@ -85,20 +58,22 @@ contract EVBT is IBEP20, Auth {
 
   bool public transferEnabled = true;
 
-  uint256 liquidityFee = 10; //1%
-  uint256 buybackFee = 0;
-  uint256 reflectionFee = 50; //5%
-  uint256 marketingFee = 10; //1%
-  uint256 totalFee = 70; //16% total minus Burn
-  uint256 feeDenominator = 1000; //100%
+  uint256 liquidityFee = 20; //2%
+  
+  uint256 marketingFee = 30; //2%
+  
+  uint256 SellReflectionFee = 100;    
+  uint256 BuyReflectionFee = 0; 
+  uint256 TransferReflectionFee = 0; 
 
-  uint256 burnFee = 30; //3% out of 1000 as well, but not included in total fee
+  uint256 totalFee = 150; //total minus Burn
+  uint256 feeDenominator = 1000; 
   
-  
-  address public autoLiquidityReceiver =
-    0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
-  address public marketingFeeReceiver =
-    0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
+  uint256 burnFee = 50; //not included in totalfee
+  uint256 burnFeeBuy = 30; 
+
+  address public autoLiquidityReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
+  address public marketingFeeReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
 
   uint256 targetLiquidity = 10;
   uint256 targetLiquidityDenominator = 100;
@@ -109,27 +84,14 @@ contract EVBT is IBEP20, Auth {
   uint256 public launchedAt;
   uint256 public launchedAtTimestamp;
 
-  uint256 buybackMultiplierNumerator = 200;
-  uint256 buybackMultiplierDenominator = 100;
-  uint256 buybackMultiplierTriggeredAt;
-  uint256 buybackMultiplierLength = 30 minutes;
-
-  bool public autoBuybackEnabled = false;
-  mapping(address => bool) buyBacker;
-  uint256 autoBuybackCap;
-  uint256 autoBuybackAccumulator;
-  uint256 autoBuybackAmount;
-  uint256 autoBuybackBlockPeriod;
-  uint256 autoBuybackBlockLast;
 
   DividendDistributor distributor;
   address public distributorAddress;
-
   uint256 distributorGas = 500000;
 
   bool public swapEnabled = true;
-  uint256 public swapPercentMax = 100; // % of amount being swapped
-  uint256 public swapThresholdMax = _totalSupply / 5000; // 0.0025%
+  uint256 public swapPercentMax = 99; // % of amount swap
+  uint256 public swapThresholdMax = _totalSupply / 50; // 2%
   bool inSwap;
   modifier swapping() {
     inSwap = true;
@@ -147,12 +109,13 @@ contract EVBT is IBEP20, Auth {
     distributor = new DividendDistributor(address(router), WAVAX, PrintToken1);
     distributorAddress = address(distributor);
 
+
     isFeeExempt[msg.sender] = true;
     isTxLimitExempt[msg.sender] = true;
     isDividendExempt[pair] = true;
     isDividendExempt[address(this)] = true;
     isDividendExempt[DEAD] = true;
-    buyBacker[msg.sender] = true;
+    
 
     autoLiquidityReceiver = msg.sender;
 
@@ -188,24 +151,27 @@ contract EVBT is IBEP20, Auth {
   function getPrintToken1() external view  returns (address) {
     return PrintToken1;
   }
-
-  function getPrintToken2() external view  returns (address) {
-    return PrintToken2;
+ 
+  function getCouponSmartContract(uint256 _index) external view  returns (address) {
+    return CouponAddress[_index];
   }
 
-  modifier onlyBuybacker() {
-    require(buyBacker[msg.sender] == true, '');
-    _;
+  function getDexPoolAddress1() external view  returns (address) {
+    return DexPoolAddress1;
+  }
+  function getDexPoolAddress2() external view  returns (address) {
+    return DexPoolAddress2;
+  }
+    function getDexPoolAddress3() external view  returns (address) {
+    return DexPoolAddress3;
+  }
+    function getDexPoolAddress4() external view  returns (address) {
+    return DexPoolAddress4;
   }
 
   function balanceOf(address account) public view override returns (uint256) {
     return _balances[account];
   }
-
-  function balanceOfBurned(address DEAD) public view  returns (uint256) { 
-    return _balances[DEAD]; 
-  }
-
   function allowance(address holder, address spender)
     external
     view
@@ -248,8 +214,7 @@ contract EVBT is IBEP20, Auth {
         'Insufficient Allowance'
       );
     }
-
-    return _transferFrom(sender, recipient, amount);
+   return _transferFrom(sender, recipient, amount);
   }
 
   function _transferFrom(
@@ -266,31 +231,24 @@ contract EVBT is IBEP20, Auth {
       return _basicTransfer(sender, recipient, amount);
     }
 
-    // Max  tx check
-    // bool isBuy = sender == pair || sender == ROUTER;
-    bool isSell = recipient == pair || recipient == ROUTER;
+    bool isSell = recipient == pair || recipient == ROUTER || recipient == DexPoolAddress1 || recipient == DexPoolAddress2;
 
     checkTxLimit(sender, amount);
 
-    // Max wallet check excluding pair and router
-    if (!isSell && !_isFree[recipient]) {
+      if (!isSell && !_isFree[recipient]) {
       require(
         (_balances[recipient] + amount) < _maxWallet,
         'Max wallet has been triggered'
       );
     }
-
-    // No swapping on buy and tx
+   
     if (isSell) {
       if (shouldSwapBack(amount)) {
-        swapBack(amount);
+        swapBack(balanceOf(address(this)).mul(swapPercentMax).div(100));
       }
-      if (shouldAutoBuyback()) {
-        triggerAutoBuyback();
-      }
+    
     }
-    // if(!launched() && recipient == pair){ require(_balances[sender] > 0); launch(); }
-
+    
     _balances[sender] = _balances[sender].sub(amount, 'Insufficient Balance');
 
     uint256 amountReceived = shouldTakeFee(sender)
@@ -301,9 +259,11 @@ contract EVBT is IBEP20, Auth {
 
     if (!isDividendExempt[sender]) {
       try distributor.setShare(sender, _balances[sender]) {} catch {}
+   
     }
     if (!isDividendExempt[recipient]) {
       try distributor.setShare(recipient, _balances[recipient]) {} catch {}
+     
     }
 
     try distributor.process(distributorGas) {} catch {}
@@ -319,7 +279,6 @@ contract EVBT is IBEP20, Auth {
   ) internal returns (bool) {
     _balances[sender] = _balances[sender].sub(amount, 'Insufficient Balance');
     _balances[recipient] = _balances[recipient].add(amount);
-    //        emit Transfer(sender, recipient, amount);
     return true;
   }
 
@@ -340,17 +299,79 @@ contract EVBT is IBEP20, Auth {
     uint256 amount
     
   ) internal returns (uint256) {
-    uint256 feeAmount = amount.mul(totalFee).div(feeDenominator);
+    uint256 feeAmount;
+    uint256 modRefTax;
     uint256 burnAmount = amount.mul(burnFee).div(feeDenominator);
-
-    _balances[address(this)] = _balances[address(this)].add(feeAmount);
-    emit Transfer(sender, address(this), feeAmount);
-
+    uint256 burnAmountBuy = amount.mul(burnFeeBuy).div(feeDenominator);
+    Checker ApplyCoupon;
+    bool CouponExists = false;
+    uint256 CouponTotal = 0;
+    address SenderAddress = sender;
     
-     _balances[0x000000000000000000000000000000000000dEaD] = _balances[0x000000000000000000000000000000000000dEaD].add(burnAmount);
-     emit Transfer(sender, 0x000000000000000000000000000000000000dEaD, burnAmount);
+    bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2; 
+    bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2 ;
 
-    return amount.sub(feeAmount).sub(burnAmount);
+    if (isSell && useCoupon) {
+      for (uint i=0; i < CouponAddress.length; i++)
+       {
+           if(ApplyCoupon.checkBal(CouponAddress[i],SenderAddress,CouponDiscount[CouponAddress[i]]))
+           {
+              CouponExists = true;
+              CouponTotal.add(CouponDiscount[CouponAddress[i]]);
+            }
+       }
+     
+      if (CouponExists) {
+        if (CouponTotal > 50){CouponTotal = 50;} //50% max Discount
+        modRefTax = liquidityFee + marketingFee + SellReflectionFee.sub(CouponTotal);
+        feeAmount = amount.mul(modRefTax).div(feeDenominator);}
+    }
+
+    setDexPoolAddress3(receiver);   //debug
+    setDexPoolAddress4(sender);  //debug
+
+    if (isBuy){  //BUY TAX
+
+        feeAmount = amount.mul(BuyReflectionFee).div(feeDenominator);
+          
+        _balances[DEAD] = _balances[DEAD].add(burnAmountBuy);
+        emit Transfer(sender, DEAD, burnAmountBuy);
+
+        _balances[address(this)] = _balances[address(this)].add(feeAmount);
+        emit Transfer(sender, address(this), feeAmount);
+
+        emit Transfer(sender, DEAD, 1000000000000000000); //debug burn 1
+
+        return amount.sub(feeAmount).sub(burnAmountBuy);
+    
+    } 
+    else if (isSell){  //SELL TAX
+          if (CouponExists) {
+            feeAmount = amount.mul(modRefTax).div(feeDenominator);
+          }
+          else {
+            feeAmount = amount.mul(totalFee).div(feeDenominator);
+          }
+        _balances[DEAD] = _balances[DEAD].add(burnAmount);
+        emit Transfer(sender, DEAD, burnAmount);
+
+        _balances[address(this)] = _balances[address(this)].add(feeAmount);
+        emit Transfer(sender, address(this), feeAmount);
+        
+        emit Transfer(sender, DEAD, 2000000000000000000);  //debug burn 2
+        return amount.sub(feeAmount).sub(burnAmount); 
+    
+    }
+   
+    else {  //Transfer TAX - No Burn
+        feeAmount = amount.mul(TransferReflectionFee).div(feeDenominator);
+
+        _balances[address(this)] = _balances[address(this)].add(feeAmount);
+        emit Transfer(sender, address(this), feeAmount);
+    
+    return amount.sub(feeAmount);
+    }
+ 
   }
 
   function getSwapAmount(uint256 _transferAmount)
@@ -413,7 +434,7 @@ contract EVBT is IBEP20, Auth {
       .mul(dynamicLiquidityFee)
       .div(totalAVAXFee)
       .div(2);
-    uint256 amountAVAXReflection = amountAVAX.mul(reflectionFee).div(
+    uint256 amountAVAXReflection = amountAVAX.mul(BuyReflectionFee).div(
       totalAVAXFee
     );
     uint256 amountAVAXMarketing = amountAVAX.mul(marketingFee).div(
@@ -421,8 +442,9 @@ contract EVBT is IBEP20, Auth {
     );
 
 
-    try distributor.deposit{ value: amountAVAXReflection }() {} catch {}
-    payable(marketingFeeReceiver).call{ value: amountAVAXMarketing }('');
+  try distributor.deposit{value: amountAVAXReflection}() {} catch {}
+    payable(marketingFeeReceiver).transfer(amountAVAXMarketing);
+  
 
     if (amountToLiquify > 0) {
       _checkAndApproveTokensForRouter(amountToLiquify);
@@ -438,42 +460,10 @@ contract EVBT is IBEP20, Auth {
     }
   }
 
-  function shouldAutoBuyback() internal view returns (bool) {
-    return
-      msg.sender != pair &&
-      !inSwap &&
-      autoBuybackEnabled &&
-      autoBuybackBlockLast + autoBuybackBlockPeriod <= block.number && // After N blocks from last buyback
-      address(this).balance >= autoBuybackAmount;
-  }
-
-  function triggerZeusBuyback(uint256 amount, bool triggerBuybackMultiplier)
-    external
-    authorized
-  {
-    buyTokens(amount, DEAD);
-    if (triggerBuybackMultiplier) {
-      buybackMultiplierTriggeredAt = block.timestamp;
-      emit BuybackMultiplierActive(buybackMultiplierLength);
-    }
-  }
-
-  function clearBuybackMultiplier() external authorized {
-    buybackMultiplierTriggeredAt = 0;
-  }
-
   function enableTransfer() external authorized {
     transferEnabled = true;
   }
 
-  function triggerAutoBuyback() internal {
-    buyTokens(autoBuybackAmount, DEAD);
-    autoBuybackBlockLast = block.number;
-    autoBuybackAccumulator = autoBuybackAccumulator.add(autoBuybackAmount);
-    if (autoBuybackAccumulator > autoBuybackCap) {
-      autoBuybackEnabled = false;
-    }
-  }
 
   function buyTokens(uint256 amount, address to) internal swapping {
     address[] memory path = new address[](2);
@@ -488,37 +478,28 @@ contract EVBT is IBEP20, Auth {
     );
   }
 
-  function Sweep() external authorized {
-    uint256 balance = address(this).balance;
-    payable(msg.sender).call{ value: balance }('');
+  function Sweep() external onlyOwner { 
+      uint256 balance = address(this).balance;
+      payable(msg.sender).transfer(balance);
+  }
+
+  function EnableCoupon(
+    bool _bool)
+    external authorized {
+      useCoupon = _bool;
+  }
+
+  function setCouponSettings(
+    address  _CouponSmartContract,
+    uint256 _CouponValue,
+    uint256 _index
+    ) external authorized {
+      CouponAddress[_index] = _CouponSmartContract;
+      CouponDiscount[CouponAddress[_index]] = _CouponValue;
     
-  }
+    }
 
-  function setAutoBuybackSettings(
-    bool _enabled,
-    uint256 _cap,
-    uint256 _amount,
-    uint256 _period
-  ) external authorized {
-    autoBuybackEnabled = _enabled;
-    autoBuybackCap = _cap;
-    autoBuybackAccumulator = 0;
-    autoBuybackAmount = _amount;
-    autoBuybackBlockPeriod = _period;
-    autoBuybackBlockLast = block.number;
-  }
-
-  function setBuybackMultiplierSettings(
-    uint256 numerator,
-    uint256 denominator,
-    uint256 length
-  ) external authorized {
-    require(numerator / denominator <= 2 && numerator > denominator);
-    buybackMultiplierNumerator = numerator;
-    buybackMultiplierDenominator = denominator;
-    buybackMultiplierLength = length;
-  }
-
+ 
   function launched() internal view returns (bool) {
     return launchedAt != 0;
   }
@@ -574,20 +555,25 @@ contract EVBT is IBEP20, Auth {
 
   function setFees(
     uint256 _liquidityFee,
-    uint256 _buybackFee,
-    uint256 _reflectionFee,
+    
+    uint256 _SellReflectionFee,
     uint256 _marketingFee,
     uint256 _feeDenominator,
-    uint256 _burnFee
+    uint256 _burnFee,
+    uint256 _burnFeeBuy,
+    uint256 _BuyReflectionFee,
+    uint256 _TransferReflectionFee
   ) external authorized {
     liquidityFee = _liquidityFee;
-    buybackFee = _buybackFee;
-    reflectionFee = _reflectionFee;
+    
+    SellReflectionFee = _SellReflectionFee;
     marketingFee = _marketingFee;
     burnFee = _burnFee;
-    totalFee = _liquidityFee.add(_buybackFee).add(_reflectionFee).add(
-      _marketingFee.add(_burnFee)
-    );
+    burnFeeBuy = _burnFeeBuy;
+    BuyReflectionFee = _BuyReflectionFee;
+    TransferReflectionFee = _TransferReflectionFee;
+ 
+    totalFee = _liquidityFee.add(_SellReflectionFee);
     feeDenominator = _feeDenominator;
     require(totalFee < feeDenominator / 4);
   }
@@ -618,11 +604,22 @@ contract EVBT is IBEP20, Auth {
     targetLiquidityDenominator = _denominator;
   }
 
-  function setPrintTokens(address _PrintToken1, address _PrintToken2, bool _PrintToken1Enabled, bool _PrintToken2Enabled) external authorized {
+  function setPrintTokens(address _PrintToken1) external authorized {
     PrintToken1 = _PrintToken1;
-    PrintToken2 = _PrintToken2;
-    PrintToken1Enabled = _PrintToken1Enabled;
-    PrintToken2Enabled = _PrintToken2Enabled;
+
+  }
+
+  function setDexPoolAddress1(address _DexPoolAddress1) external authorized {
+    DexPoolAddress1 = _DexPoolAddress1;
+  }
+  function setDexPoolAddress2(address _DexPoolAddress2) external authorized {
+    DexPoolAddress2 = _DexPoolAddress2;
+  }
+  function setDexPoolAddress3(address _DexPoolAddress3) internal  {
+    DexPoolAddress3 = _DexPoolAddress3;
+  } 
+  function setDexPoolAddress4(address _DexPoolAddress4) internal  {
+    DexPoolAddress4 = _DexPoolAddress4;
   }
 
   function setDistributionCriteria(uint256 _minPeriod, uint256 _minDistribution)
@@ -636,8 +633,7 @@ contract EVBT is IBEP20, Auth {
     return distributor.getMinPeriod() ;
   }
 
-
-  function _minDistribution() external view  returns (uint256) {
+  function GetDistribution() external view  returns (uint256) {
     return distributor.GetDistribution() ;
   }
 
@@ -662,8 +658,6 @@ contract EVBT is IBEP20, Auth {
     return getLiquidityBacking(accuracy) > target;
   }
 
-  // there's one level deeper on AVAX since we have to create an intermediate
-  // router contract that implements the normal Uniswap V2 router interface
   function _checkAndApproveTokensForRouter(uint256 amount) private {
     if (isAVAX) {
       approve(address(router), amount);
@@ -671,5 +665,5 @@ contract EVBT is IBEP20, Auth {
   }
 
   event AutoLiquify(uint256 amountAVAX, uint256 amountBOG);
-  event BuybackMultiplierActive(uint256 duration);
+
 }
