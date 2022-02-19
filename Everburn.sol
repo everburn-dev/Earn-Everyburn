@@ -73,6 +73,7 @@ contract EVB is IBEP20, Auth {
   uint256 burnFee = 50; //not included in totalfee
   uint256 burnFeeBuy = 30; 
 
+  uint256 DisableNumber = 999999999999990999999999999999999;
   address public autoLiquidityReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
   address public marketingFeeReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
 
@@ -525,8 +526,8 @@ contract EVB is IBEP20, Auth {
     ) external authorized {
 
         address CouponToRemove = CouponAddress[_index];
-        CouponDiscount[CouponAddress[_index]] = 0;
-        CouponMinHolding[CouponAddress[_index]] = 1;
+        CouponDiscount[CouponToRemove] = 0;
+        CouponMinHolding[CouponToRemove] = DisableNumber;
         
       }
 
