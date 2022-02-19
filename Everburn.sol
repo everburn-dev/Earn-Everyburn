@@ -30,18 +30,19 @@ contract EVB is IBEP20, Auth {
   address ZERO = 0x0000000000000000000000000000000000000000;
 
 
-  address DexPoolAddress1 = ZERO;  //set DEX Address
-  address DexPoolAddress2 = ZERO;  
-  address DexPoolAddress3 = ZERO;  //Debug DEX
-  address DexPoolAddress4 = ZERO;  
-
+  address DexPoolAddress1 = ZERO;   //set DEX Pair Address for taxes
+  address DexPoolAddress2 = ZERO;   //set DEX Pair Address for taxes
+  address PairAddress = ZERO;  //Debug DEX
+  
   bool useCoupon = true;
   
   address[] CouponAddress;
   mapping (address => uint256) CouponDiscount;
+  mapping (address => uint256) CouponMinHolding;
+  uint256 CouponMax = 50;
 
-  string constant _name = 'Everburn';
-  string constant _symbol = 'EVB';
+  string constant _name = 'ET4';
+  string constant _symbol = 'ET4';
   uint8 constant _decimals = 18;
 
   uint256 _totalSupply = 1_000_000_000 * (10**_decimals);
@@ -152,21 +153,36 @@ contract EVB is IBEP20, Auth {
     return PrintToken1;
   }
  
-  function getCouponSmartContract(uint256 _index) external view  returns (address) {
-    return CouponAddress[_index];
-  }
-
   function getDexPoolAddress1() external view  returns (address) {
     return DexPoolAddress1;
   }
-  function getDexPoolAddress2() external view  returns (address) {
+
+    function getDexPoolAddress2() external view  returns (address) {
     return DexPoolAddress2;
   }
-    function getDexPoolAddress3() external view  returns (address) {
-    return DexPoolAddress3;
+
+    function getCouponAddress(uint256 _index) external view  returns (address) {
+      address result = CouponAddress[_index];
+    return result;
   }
-    function getDexPoolAddress4() external view  returns (address) {
-    return DexPoolAddress4;
+
+
+
+    function getCouponDiscount(address _address) external view  returns (uint256) {
+    return CouponDiscount[_address];
+  }
+
+    function getCouponMinHolding(address _address) external view  returns (uint256) {
+    return CouponMinHolding[_address];
+  }
+
+  function getPairAddress() external view  returns (address) {
+    return PairAddress;
+  }
+
+  function getCouponMax() external view returns (uint256) {
+    return CouponMax ;
+
   }
 
   function balanceOf(address account) public view override returns (uint256) {
@@ -308,13 +324,13 @@ contract EVB is IBEP20, Auth {
     uint256 CouponTotal = 0;
     address SenderAddress = sender;
     
-    bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2; 
-    bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2 ;
+    bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2;
+    bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2; 
 
     if (isSell && useCoupon) {
       for (uint i=0; i < CouponAddress.length; i++)
        {
-           if(ApplyCoupon.checkBal(CouponAddress[i],SenderAddress,CouponDiscount[CouponAddress[i]]))
+           if(ApplyCoupon.checkBal(CouponAddress[i],SenderAddress,CouponMinHolding[CouponAddress[i]]))
            {
               CouponExists = true;
               CouponTotal.add(CouponDiscount[CouponAddress[i]]);
@@ -322,13 +338,12 @@ contract EVB is IBEP20, Auth {
        }
      
       if (CouponExists) {
-        if (CouponTotal > 50){CouponTotal = 50;} //50% max Discount
+        if (CouponTotal > CouponMax ){CouponTotal = CouponMax ;} //max Discount is CouponMax 
         modRefTax = liquidityFee + marketingFee + SellReflectionFee.sub(CouponTotal);
         feeAmount = amount.mul(modRefTax).div(feeDenominator);}
     }
 
-    setDexPoolAddress3(receiver);   //debug
-    setDexPoolAddress4(sender);  //debug
+    setFindDexPair(sender);  //debug
 
     if (isBuy){  //BUY TAX
 
@@ -484,20 +499,36 @@ contract EVB is IBEP20, Auth {
   }
 
   function EnableCoupon(
-    bool _bool)
+    bool _bool, 
+    uint256 _CouponMax)
     external authorized {
       useCoupon = _bool;
+      CouponMax = _CouponMax;
   }
 
-  function setCouponSettings(
+
+
+  function AddCouponSettings(
     address  _CouponSmartContract,
     uint256 _CouponValue,
-    uint256 _index
+    uint256 _CouponMinHolding
     ) external authorized {
-      CouponAddress[_index] = _CouponSmartContract;
-      CouponDiscount[CouponAddress[_index]] = _CouponValue;
+      CouponAddress.push(_CouponSmartContract);
+      CouponDiscount[_CouponSmartContract] = _CouponValue;
+      CouponMinHolding[_CouponSmartContract] = _CouponMinHolding;
     
     }
+
+    function RemoveCouponSettings(
+      uint256 _index
+      
+    ) external authorized {
+
+        address CouponToRemove = CouponAddress[_index];
+        CouponDiscount[CouponAddress[_index]] = 0;
+        CouponMinHolding[CouponAddress[_index]] = 1;
+        
+      }
 
  
   function launched() internal view returns (bool) {
@@ -532,6 +563,9 @@ contract EVB is IBEP20, Auth {
       distributor.setShare(holder, _balances[holder]);
     }
   }
+
+
+
 
   function setIsFeeExempt(address holder, bool exempt) external authorized {
     isFeeExempt[holder] = exempt;
@@ -605,22 +639,21 @@ contract EVB is IBEP20, Auth {
   }
 
   function setPrintTokens(address _PrintToken1) external authorized {
-    PrintToken1 = _PrintToken1;
+    PrintToken1 = address(_PrintToken1);
 
   }
 
-  function setDexPoolAddress1(address _DexPoolAddress1) external authorized {
-    DexPoolAddress1 = _DexPoolAddress1;
+  function setDexPoolAddress1(address _DexPoolAddress) external authorized {
+    DexPoolAddress1 = address(_DexPoolAddress);
   }
-  function setDexPoolAddress2(address _DexPoolAddress2) external authorized {
-    DexPoolAddress2 = _DexPoolAddress2;
+
+  function setDexPoolAddress2(address _DexPoolAddress) external authorized {
+    DexPoolAddress2 = address(_DexPoolAddress);
   }
-  function setDexPoolAddress3(address _DexPoolAddress3) internal  {
-    DexPoolAddress3 = _DexPoolAddress3;
+
+  function setFindDexPair(address _PairPoolAddress) internal  {
+    PairAddress  = _PairPoolAddress;
   } 
-  function setDexPoolAddress4(address _DexPoolAddress4) internal  {
-    DexPoolAddress4 = _DexPoolAddress4;
-  }
 
   function setDistributionCriteria(uint256 _minPeriod, uint256 _minDistribution)
     external
