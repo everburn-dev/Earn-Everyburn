@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import '@openzeppelin/contracts/utils/math/SafeMath.sol';
+import './SafeMath.sol';
 import './IBEP20.sol';
 import './IDEXRouter.sol';
 import './IDividendDistributor.sol';
@@ -17,7 +17,7 @@ contract DividendDistributor is IDividendDistributor {
     uint256 totalRealised;
   }
 
-  IBEP20 PT;
+  IBEP20 Token1;
   address WAVAX;
   IDEXRouter router;
 
@@ -33,8 +33,8 @@ contract DividendDistributor is IDividendDistributor {
   uint256 public dividendsPerShare;
   uint256 public dividendsPerShareAccuracyFactor = 10**36;
 
-  uint256 public minPeriod = 1 hours;
-  uint256 public minDistribution = 10 * (10**18);
+  uint256 public minPeriod = 600; //seconds
+  uint256 public minDistribution = 10 * (10**3);
 
   uint256 currentIndex;
 
@@ -58,7 +58,17 @@ contract DividendDistributor is IDividendDistributor {
     router = IDEXRouter(_router);
     _token = msg.sender;
     WAVAX = _WAVAX;
-    PT = IBEP20(_printerToken);
+    Token1 = IBEP20(_printerToken);
+  }
+
+
+  function getMinPeriod() external view  returns (uint256) {
+    return minPeriod ;
+  }
+
+
+  function GetDistribution() external view  returns (uint256) {
+    return minDistribution ;
   }
 
   function setDistributionCriteria(uint256 _minPeriod, uint256 _minDistribution)
@@ -76,7 +86,7 @@ contract DividendDistributor is IDividendDistributor {
     onlyToken
   {
     if (shares[shareholder].amount > 0) {
-      distributeDividend(shareholder, false);
+      distributeDividend(shareholder);
     }
 
     if (amount > 0 && shares[shareholder].amount == 0) {
@@ -93,17 +103,17 @@ contract DividendDistributor is IDividendDistributor {
   }
 
   function deposit() external payable override onlyToken {
-    uint256 balanceBefore = PT.balanceOf(address(this));
+    uint256 balanceBefore = Token1.balanceOf(address(this));
 
     address[] memory path = new address[](2);
     path[0] = WAVAX;
-    path[1] = address(PT);
+    path[1] = address(Token1);
 
     router.swapExactETHForTokensSupportingFeeOnTransferTokens{
       value: msg.value
     }(0, path, address(this), block.timestamp);
 
-    uint256 amount = PT.balanceOf(address(this)).sub(balanceBefore);
+    uint256 amount = Token1.balanceOf(address(this)).sub(balanceBefore);
 
     totalDividends = totalDividends.add(amount);
     dividendsPerShare = dividendsPerShare.add(
@@ -129,7 +139,7 @@ contract DividendDistributor is IDividendDistributor {
       }
 
       if (shouldDistribute(shareholders[currentIndex])) {
-        distributeDividend(shareholders[currentIndex], false);
+        distributeDividend(shareholders[currentIndex]);
       }
 
       gasUsed = gasUsed.add(gasLeft.sub(gasleft()));
@@ -145,7 +155,7 @@ contract DividendDistributor is IDividendDistributor {
       getUnpaidEarnings(shareholder) > minDistribution;
   }
 
-  function distributeDividend(address shareholder, bool compound) internal {
+  function distributeDividend(address shareholder) internal {
     if (shares[shareholder].amount == 0) {
       return;
     }
@@ -153,22 +163,9 @@ contract DividendDistributor is IDividendDistributor {
     uint256 amount = getUnpaidEarnings(shareholder);
     if (amount > 0) {
       totalDistributed = totalDistributed.add(amount);
-      if (compound && address(PT) != _token) {
-        PT.approve(address(router), amount);
-        address[] memory path = new address[](3);
-        path[0] = address(PT);
-        path[1] = WAVAX;
-        path[2] = _token;
-        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-          amount,
-          0, // TODO: calculate estimate, and add here accounting for slippage (~25%+)
-          path,
-          shareholder,
-          block.timestamp
-        );
-      } else {
-        PT.transfer(shareholder, amount);
-      }
+      
+      Token1.transfer(shareholder, amount);
+       
       shareholderClaims[shareholder] = block.timestamp;
       shares[shareholder].totalRealised = shares[shareholder].totalRealised.add(
         amount
@@ -179,8 +176,8 @@ contract DividendDistributor is IDividendDistributor {
     }
   }
 
-  function claimDividend(bool compound) external {
-    distributeDividend(msg.sender, compound);
+  function claimDividend() external {
+    distributeDividend(msg.sender);
   }
 
   /*
@@ -213,14 +210,6 @@ returns the  unpaid earnings
     returns (uint256)
   {
     return share.mul(dividendsPerShare).div(dividendsPerShareAccuracyFactor);
-  }
-    function getMinPeriod() external view  returns (uint256) {
-    return minPeriod ;
-  }
-
-
-  function GetDistribution() external view  returns (uint256) {
-    return minDistribution ;
   }
 
   function addShareholder(address shareholder) internal {

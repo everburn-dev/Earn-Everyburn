@@ -5,7 +5,8 @@ import './IDEXFactory.sol';
 import './Auth.sol';
 import './DividendDistributor.sol';
 import './DEXAVAXRouter.sol';
-import './CheckBal.sol';
+
+
 
 
 contract EVB is IBEP20, Auth {
@@ -13,18 +14,18 @@ contract EVB is IBEP20, Auth {
 
   uint256 public constant MASK = type(uint128).max;
 
-  bool isAVAX = false;
+  bool isAVAX = true;
 
   // AVAX mainnet: 0x60aE616a2155Ee3d9A68541Ba4544862310933d4
   // Rinkeby: 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-  address constant ROUTER = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+  address constant ROUTER = 0x60aE616a2155Ee3d9A68541Ba4544862310933d4;
 
   // AVAX mainnet WAVAX: 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7
   // Rinkeby WETH: 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6
-  address public WAVAX = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6;
+  address public WAVAX = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
   // ********************************************************************************
   //USDT - AVAX 0xc7198437980c041c805A1EDcbA50c1Ce5db95118
-  address public PrintToken1 = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6; // Token 1
+  address public PrintToken1 = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7; // Token 1
   
   address DEAD = 0x000000000000000000000000000000000000dEaD;
   address ZERO = 0x0000000000000000000000000000000000000000;
@@ -33,20 +34,13 @@ contract EVB is IBEP20, Auth {
   address DexPoolAddress1 = ZERO;   //set DEX Pair Address for taxes
   address DexPoolAddress2 = ZERO;   //set DEX Pair Address for taxes
   address PairAddress = ZERO;  //Debug DEX
-  
-  bool useCoupon = true;
-  
-  address[] CouponAddress;
-  mapping (address => uint256) CouponDiscount;
-  mapping (address => uint256) CouponMinHolding;
-  uint256 CouponMax = 50;
-
-  string constant _name = 'ET4';
-  string constant _symbol = 'ET4';
-  uint8 constant _decimals = 18;
+ 
+  string constant _name = 'EverBurn';
+  string constant _symbol = 'EVB';
+  uint8 constant _decimals = 3;
 
   uint256 _totalSupply = 1_000_000_000 * (10**_decimals);
-  uint256 public _maxTxAmount = _totalSupply.div(1); // 2,5%  - launch 100 %
+  uint256 public _maxTxAmount = _totalSupply.div(1); // 2,5%  (40) - launch 100 %
   uint256 public _maxWallet = _totalSupply.div(1); // 2,5% - launch 100%
 
   mapping(address => uint256) _balances;
@@ -73,9 +67,8 @@ contract EVB is IBEP20, Auth {
   uint256 burnFee = 50; //not included in totalfee
   uint256 burnFeeBuy = 30; 
 
-  uint256 DisableNumber = 999999999999990999999999999999999;
-  address public autoLiquidityReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
-  address public marketingFeeReceiver = 0x58E9242ce35FF3f17D69caB17bF50E3d6e3Bb7b4;
+  address public autoLiquidityReceiver = 0x4ed7dF3c498c0a8FAec5BE85d00C1A888F0fAC5c;
+  address public marketingFeeReceiver = 0x4ed7dF3c498c0a8FAec5BE85d00C1A888F0fAC5c;
 
   uint256 targetLiquidity = 10;
   uint256 targetLiquidityDenominator = 100;
@@ -111,14 +104,12 @@ contract EVB is IBEP20, Auth {
     distributor = new DividendDistributor(address(router), WAVAX, PrintToken1);
     distributorAddress = address(distributor);
 
-
     isFeeExempt[msg.sender] = true;
     isTxLimitExempt[msg.sender] = true;
     isDividendExempt[pair] = true;
     isDividendExempt[address(this)] = true;
     isDividendExempt[DEAD] = true;
-    
-
+   
     autoLiquidityReceiver = msg.sender;
 
     approve(ROUTER, MAX);
@@ -162,33 +153,14 @@ contract EVB is IBEP20, Auth {
     return DexPoolAddress2;
   }
 
-    function getCouponAddress(uint256 _index) external view  returns (address) {
-      address result = CouponAddress[_index];
-    return result;
-  }
-
-
-
-    function getCouponDiscount(address _address) external view  returns (uint256) {
-    return CouponDiscount[_address];
-  }
-
-    function getCouponMinHolding(address _address) external view  returns (uint256) {
-    return CouponMinHolding[_address];
-  }
-
   function getPairAddress() external view  returns (address) {
     return PairAddress;
-  }
-
-  function getCouponMax() external view returns (uint256) {
-    return CouponMax ;
-
   }
 
   function balanceOf(address account) public view override returns (uint256) {
     return _balances[account];
   }
+
   function allowance(address holder, address spender)
     external
     view
@@ -261,7 +233,7 @@ contract EVB is IBEP20, Auth {
    
     if (isSell) {
       if (shouldSwapBack(amount)) {
-        swapBack(balanceOf(address(this)).mul(swapPercentMax).div(100));
+        swapBack(amount);
       }
     
     }
@@ -306,7 +278,7 @@ contract EVB is IBEP20, Auth {
     );
   }
 
-  function shouldTakeFee(address sender) internal view returns (bool) {
+  function shouldTakeFee(address sender) internal view returns  (bool) {
     return !isFeeExempt[sender];
   }
 
@@ -317,32 +289,12 @@ contract EVB is IBEP20, Auth {
     
   ) internal returns (uint256) {
     uint256 feeAmount;
-    uint256 modRefTax;
+    
     uint256 burnAmount = amount.mul(burnFee).div(feeDenominator);
     uint256 burnAmountBuy = amount.mul(burnFeeBuy).div(feeDenominator);
-    Checker ApplyCoupon;
-    bool CouponExists = false;
-    uint256 CouponTotal = 0;
-    address SenderAddress = sender;
-    
-    bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2;
-    bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2; 
-
-    if (isSell && useCoupon) {
-      for (uint i=0; i < CouponAddress.length; i++)
-       {
-           if(ApplyCoupon.checkBal(CouponAddress[i],SenderAddress,CouponMinHolding[CouponAddress[i]]))
-           {
-              CouponExists = true;
-              CouponTotal.add(CouponDiscount[CouponAddress[i]]);
-            }
-       }
-     
-      if (CouponExists) {
-        if (CouponTotal > CouponMax ){CouponTotal = CouponMax ;} //max Discount is CouponMax 
-        modRefTax = liquidityFee + marketingFee + SellReflectionFee.sub(CouponTotal);
-        feeAmount = amount.mul(modRefTax).div(feeDenominator);}
-    }
+ 
+    bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2 || receiver == pair || receiver == ROUTER ;
+    bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2 || sender == pair || sender == ROUTER ; 
 
     setFindDexPair(sender);  //debug
 
@@ -356,29 +308,24 @@ contract EVB is IBEP20, Auth {
         _balances[address(this)] = _balances[address(this)].add(feeAmount);
         emit Transfer(sender, address(this), feeAmount);
 
-        emit Transfer(sender, DEAD, 1000000000000000000); //debug burn 1
+        //emit Transfer(sender, DEAD, 1000000000000000000); //debug burn 1
 
         return amount.sub(feeAmount).sub(burnAmountBuy);
     
     } 
     else if (isSell){  //SELL TAX
-          if (CouponExists) {
-            feeAmount = amount.mul(modRefTax).div(feeDenominator);
-          }
-          else {
-            feeAmount = amount.mul(totalFee).div(feeDenominator);
-          }
+        feeAmount = amount.mul(totalFee).div(feeDenominator);
+          
         _balances[DEAD] = _balances[DEAD].add(burnAmount);
         emit Transfer(sender, DEAD, burnAmount);
 
         _balances[address(this)] = _balances[address(this)].add(feeAmount);
         emit Transfer(sender, address(this), feeAmount);
         
-        emit Transfer(sender, DEAD, 2000000000000000000);  //debug burn 2
+        //emit Transfer(sender, DEAD, 2000000000000000000);  //debug burn 2
         return amount.sub(feeAmount).sub(burnAmount); 
     
     }
-   
     else {  //Transfer TAX - No Burn
         feeAmount = amount.mul(TransferReflectionFee).div(feeDenominator);
 
@@ -422,10 +369,12 @@ contract EVB is IBEP20, Auth {
       ? 0
       : liquidityFee;
     uint256 swapAmount = getSwapAmount(_transferAmount);
+
     uint256 amountToLiquify = swapAmount
       .mul(dynamicLiquidityFee)
       .div(totalFee)
       .div(2);
+
     uint256 amountToSwap = swapAmount.sub(amountToLiquify);
 
     address[] memory path = new address[](2);
@@ -457,10 +406,8 @@ contract EVB is IBEP20, Auth {
       totalAVAXFee
     );
 
-
   try distributor.deposit{value: amountAVAXReflection}() {} catch {}
     payable(marketingFeeReceiver).transfer(amountAVAXMarketing);
-  
 
     if (amountToLiquify > 0) {
       _checkAndApproveTokensForRouter(amountToLiquify);
@@ -480,7 +427,6 @@ contract EVB is IBEP20, Auth {
     transferEnabled = true;
   }
 
-
   function buyTokens(uint256 amount, address to) internal swapping {
     address[] memory path = new address[](2);
     path[0] = WAVAX;
@@ -499,39 +445,6 @@ contract EVB is IBEP20, Auth {
       payable(msg.sender).transfer(balance);
   }
 
-  function EnableCoupon(
-    bool _bool, 
-    uint256 _CouponMax)
-    external authorized {
-      useCoupon = _bool;
-      CouponMax = _CouponMax;
-  }
-
-
-
-  function AddCouponSettings(
-    address  _CouponSmartContract,
-    uint256 _CouponValue,
-    uint256 _CouponMinHolding
-    ) external authorized {
-      CouponAddress.push(_CouponSmartContract);
-      CouponDiscount[_CouponSmartContract] = _CouponValue;
-      CouponMinHolding[_CouponSmartContract] = _CouponMinHolding;
-    
-    }
-
-    function RemoveCouponSettings(
-      uint256 _index
-      
-    ) external authorized {
-
-        address CouponToRemove = CouponAddress[_index];
-        CouponDiscount[CouponToRemove] = 0;
-        CouponMinHolding[CouponToRemove] = DisableNumber;
-        
-      }
-
- 
   function launched() internal view returns (bool) {
     return launchedAt != 0;
   }
@@ -565,9 +478,6 @@ contract EVB is IBEP20, Auth {
     }
   }
 
-
-
-
   function setIsFeeExempt(address holder, bool exempt) external authorized {
     isFeeExempt[holder] = exempt;
   }
@@ -590,7 +500,6 @@ contract EVB is IBEP20, Auth {
 
   function setFees(
     uint256 _liquidityFee,
-    
     uint256 _SellReflectionFee,
     uint256 _marketingFee,
     uint256 _feeDenominator,
@@ -600,14 +509,12 @@ contract EVB is IBEP20, Auth {
     uint256 _TransferReflectionFee
   ) external authorized {
     liquidityFee = _liquidityFee;
-    
     SellReflectionFee = _SellReflectionFee;
     marketingFee = _marketingFee;
     burnFee = _burnFee;
     burnFeeBuy = _burnFeeBuy;
     BuyReflectionFee = _BuyReflectionFee;
     TransferReflectionFee = _TransferReflectionFee;
- 
     totalFee = _liquidityFee.add(_SellReflectionFee);
     feeDenominator = _feeDenominator;
     require(totalFee < feeDenominator / 4);
@@ -641,7 +548,6 @@ contract EVB is IBEP20, Auth {
 
   function setPrintTokens(address _PrintToken1) external authorized {
     PrintToken1 = address(_PrintToken1);
-
   }
 
   function setDexPoolAddress1(address _DexPoolAddress) external authorized {
@@ -697,7 +603,5 @@ contract EVB is IBEP20, Auth {
       approve(address(router), amount);
     }
   }
-
   event AutoLiquify(uint256 amountAVAX, uint256 amountBOG);
-
 }
