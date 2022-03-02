@@ -255,7 +255,7 @@ contract DividendDistributor is IDividendDistributor {
     uint256 public dividendsPerShareAccuracyFactor = 10 ** 36;
     uint256 public Token1Decimals = 6;
     uint256 public minPeriod = 1 hours;
-    uint256 public minDistribution = 10 * (10 ** Token1Decimals);
+    uint256 public minDistribution = 1 * (10 ** Token1Decimals);
 
     uint256 currentIndex;
 
@@ -291,9 +291,9 @@ contract DividendDistributor is IDividendDistributor {
         external
         onlyToken
     {
-    Token1 = IBEP20( _printToken);
-    Token1Decimals = _printTokenDecimals;
-    minDistribution = 1 * (10 ** Token1Decimals);
+        Token1 = IBEP20( _printToken);
+        Token1Decimals = _printTokenDecimals;
+        minDistribution = 1 * (10 ** Token1Decimals);
     }
 
     function setDistributionCriteria(uint256 _minPeriod, uint256 _minDistribution) external override onlyToken {
@@ -449,21 +449,30 @@ contract EVB is IBEP20, Auth {
     mapping (address => bool) isDividendExempt;
     mapping (address => bool) public _isFree;
   
-    uint256 buybackFee = 0;
-
+    bool TransferEnabled = true;
+ 
     //Sell taxes
-    uint256 liquidityFee = 200;
-    uint256 SellReflectionFee = 1000;
-    uint256 marketingFee = 300;
-    uint256 burnFee = 500;
-    uint256 totalFee = 1500; // Burn not included
+    uint256 public burnFee = 500;
+    uint256 public SellReflectionFee = 1000;
+    uint256 public marketingFee = 300;
+    uint256 public liquidityFee = 200;
+    uint256 public totalFee = 1500; // Burn not included
 
     //BUY Taxes
-    uint256 burnFeeBuy = 300;
+    uint256 public burnFeeBuy = 300;
+    uint256 public BuyReflectionFee = 0;
+    uint256 public BuyMarketingFee = 0;
+    uint256 public BuyliquidityFee = 0;
+    uint256 public totalBuyFee = 0; // Burn not included
    
-    uint256 TransferReflectionFee = 0;
+   //Transfer Taxes
+    uint256 public TransferReflectionFee = 0;
+    uint256 public TransferBurnFee = 0;
+    uint256 public TransferMarketingFee = 0;
+    uint256 public TransferLiquidityFee = 0;
+    uint256 public totalTransferFee = 0; // Burn not included
 
-    uint256 feeDenominator = 10000;
+    uint256 public feeDenominator = 10000;
 
     address public autoLiquidityReceiver=0x4ed7dF3c498c0a8FAec5BE85d00C1A888F0fAC5c;
     address public marketingFeeReceiver=0x4ed7dF3c498c0a8FAec5BE85d00C1A888F0fAC5c;
@@ -478,19 +487,6 @@ contract EVB is IBEP20, Auth {
     uint256 public launchedAt;
     uint256 public launchedAtTimestamp;
 
-    uint256 buybackMultiplierNumerator = 200;
-    uint256 buybackMultiplierDenominator = 100;
-    uint256 buybackMultiplierTriggeredAt;
-    uint256 buybackMultiplierLength = 30 minutes;
-
-    bool public autoBuybackEnabled = false;
-    mapping (address => bool) buyBacker;
-    uint256 autoBuybackCap;
-    uint256 autoBuybackAccumulator;
-    uint256 autoBuybackAmount;
-    uint256 autoBuybackBlockPeriod;
-    uint256 autoBuybackBlockLast;
-
     DividendDistributor distributor;
     address public distributorAddress;
 
@@ -501,8 +497,7 @@ contract EVB is IBEP20, Auth {
     uint256 public swapPercentMax = 100; // % of amount swap
     uint256 public swapThresholdMax = _totalSupply / 50; // 2%
 
-    //uint256 public swapThreshold = _totalSupply / 5000; // 0.0025%
-
+  
     bool inSwap;
     modifier swapping() { inSwap = true; _; inSwap = false; }
 
@@ -520,7 +515,7 @@ contract EVB is IBEP20, Auth {
         isDividendExempt[pair] = true;
         isDividendExempt[address(this)] = true;
         isDividendExempt[DEAD] = true;
-        buyBacker[msg.sender] = true;
+      
 
         autoLiquidityReceiver = msg.sender;
 
@@ -538,7 +533,7 @@ contract EVB is IBEP20, Auth {
     function symbol() external pure override returns (string memory) { return _symbol; }
     function name() external pure override returns (string memory) { return _name; }
     function getOwner() external view override returns (address) { return owner; }
-    modifier onlyBuybacker() { require(buyBacker[msg.sender] == true, ""); _; }
+  
     function balanceOf(address account) public view override returns (uint256) { return _balances[account]; }
     function allowance(address holder, address spender) external view override returns (uint256) { return _allowances[holder][spender]; }
 
@@ -557,6 +552,7 @@ contract EVB is IBEP20, Auth {
     }
 
     function transferFrom(address sender, address recipient, uint256 amount) external override returns (bool) {
+                
         if(_allowances[sender][msg.sender] != _totalSupply){
             _allowances[sender][msg.sender] = _allowances[sender][msg.sender].sub(amount, "Insufficient Allowance");
         }
@@ -565,6 +561,9 @@ contract EVB is IBEP20, Auth {
     }
 
     function _transferFrom(address sender, address recipient, uint256 amount) internal returns (bool) {
+        
+       require( TransferEnabled || isAuthorized(msg.sender) || isAuthorized(sender),"Transfers are Disabled");
+        
         uint256 currentFeeAmount = 0;
         if(inSwap){ return _basicTransfer(sender, recipient, amount); }
          
@@ -587,12 +586,8 @@ contract EVB is IBEP20, Auth {
         // No swapping on buy and tx
         if (isSell) {
             if(currentFeeAmount > 0){ if(shouldSwapBack(currentFeeAmount)){ swapBack(currentFeeAmount); }}
-           
-            if(shouldAutoBuyback()){ triggerAutoBuyback(); }
         }
-        //        if(!launched() && recipient == pair){ require(_balances[sender] > 0); launch(); }
-
-
+      
         _balances[recipient] = _balances[recipient].add(amountReceived);
 
         if(!isDividendExempt[sender]){ try distributor.setShare(sender, _balances[sender]) {} catch {} }
@@ -611,8 +606,6 @@ contract EVB is IBEP20, Auth {
         return true;
     }
 
-
-
     function checkTxLimit(address sender, uint256 amount) internal view {
         require(amount <= _maxTxAmount || isTxLimitExempt[sender], "TX Limit Exceeded");
     }
@@ -627,25 +620,15 @@ contract EVB is IBEP20, Auth {
         return totalFee;
     }
 
-    function getMultipliedFee() public view returns (uint256) {
-        /**
-         * if (launchedAtTimestamp + 1 days > block.timestamp) {
-            return totalFee.mul(18000).div(feeDenominator);
-        } else if (buybackMultiplierTriggeredAt.add(buybackMultiplierLength) > block.timestamp) {
-            uint256 remainingTime = buybackMultiplierTriggeredAt.add(buybackMultiplierLength).sub(block.timestamp);
-            uint256 feeIncrease = totalFee.mul(buybackMultiplierNumerator).div(buybackMultiplierDenominator).sub(totalFee);
-            return totalFee.add(feeIncrease.mul(remainingTime).div(buybackMultiplierLength));
-        }
-        */
-        return totalFee;
-    }
+
 
     function takeFee(address sender, address receiver, uint256 amount) internal returns (uint256) {
         
         uint256 feeAmount;
         
-        uint256 burnAmount = amount.mul(burnFee).div(feeDenominator);
+        uint256 burnAmountSell = amount.mul(burnFee).div(feeDenominator);
         uint256 burnAmountBuy = amount.mul(burnFeeBuy).div(feeDenominator);
+        uint256 burnAmountTrans = amount.mul(TransferBurnFee).div(feeDenominator);
     
         bool isSell = receiver == DexPoolAddress1 || receiver == DexPoolAddress2 || receiver == pair || receiver == ROUTERADDR ;
         bool isBuy = sender == DexPoolAddress1 || sender == DexPoolAddress2 || sender == pair || sender == ROUTERADDR ; 
@@ -654,14 +637,14 @@ contract EVB is IBEP20, Auth {
 
         if (isBuy){  //BUY TAX
 
-            feeAmount = amount.mul(burnFeeBuy).div(feeDenominator);
-
-                      
+            feeAmount = amount.mul(totalBuyFee).div(feeDenominator);
+                
             _balances[DEAD] = _balances[DEAD].add(burnAmountBuy);
             emit Transfer(sender, DEAD, burnAmountBuy);
 
             _balances[address(this)] = _balances[address(this)].add(feeAmount);
             emit Transfer(sender, address(this), feeAmount);
+
 
             return amount.sub(feeAmount).sub(burnAmountBuy);
         
@@ -669,27 +652,30 @@ contract EVB is IBEP20, Auth {
         else if (isSell){  //SELL TAX
             feeAmount = amount.mul(totalFee).div(feeDenominator);
             
-            _balances[DEAD] = _balances[DEAD].add(burnAmount);
-            emit Transfer(sender, DEAD, burnAmount);
+            _balances[DEAD] = _balances[DEAD].add(burnAmountSell);
+            emit Transfer(sender, DEAD, burnAmountSell);
 
             _balances[address(this)] = _balances[address(this)].add(feeAmount);
             emit Transfer(sender, address(this), feeAmount);
             
-            //emit Transfer(sender, DEAD, 2000000000000000000);  //debug burn 2
-            return amount.sub(feeAmount).sub(burnAmount); 
+            
+            return amount.sub(feeAmount).sub(burnAmountSell); 
         
         }
-        else {  //Transfer TAX - No Burn
-            feeAmount = amount.mul(TransferReflectionFee).div(feeDenominator);
+        else {  //Transfer TAX - 
+            feeAmount = amount.mul(totalTransferFee).div(feeDenominator);
+
+            _balances[DEAD] = _balances[DEAD].add(burnAmountTrans);
+            emit Transfer(sender, DEAD, burnAmountTrans);
+
 
             _balances[address(this)] = _balances[address(this)].add(feeAmount);
             emit Transfer(sender, address(this), feeAmount);
-        
-            return amount.sub(feeAmount);
+
+                   
+            return amount.sub(feeAmount).sub(burnAmountTrans);
         }
     
-
-
 
     }
 
@@ -719,7 +705,6 @@ contract EVB is IBEP20, Auth {
             address(this),
             block.timestamp
         );
-
         uint256 amountAVAX = address(this).balance.sub(balanceBefore);
 
         uint256 totalAVAXFee = totalFee.sub(dynamicLiquidityFee.div(2));
@@ -730,9 +715,7 @@ contract EVB is IBEP20, Auth {
 
         try distributor.deposit{value: amountAVAXReflection}() {} catch {}
         payable(marketingFeeReceiver).transfer(amountAVAXMarketing);
-            
-        
-
+   
         if(amountToLiquify > 0){
             router.addLiquidityAVAX{value: amountAVAXLiquidity}(
                 address(this),
@@ -742,36 +725,11 @@ contract EVB is IBEP20, Auth {
                 autoLiquidityReceiver,
                 block.timestamp
             );
-            emit AutoLiquify(amountAVAXLiquidity, amountToLiquify);
+        emit AutoLiquify(amountAVAXLiquidity, amountToLiquify);
         }
     }
 
-    function shouldAutoBuyback() internal view returns (bool) {
-        return msg.sender != pair
-        && !inSwap
-        && autoBuybackEnabled
-        && autoBuybackBlockLast + autoBuybackBlockPeriod <= block.number // After N blocks from last buyback
-        && address(this).balance >= autoBuybackAmount;
-    }
 
-    function triggerZeusBuyback(uint256 amount, bool triggerBuybackMultiplier) external authorized {
-        buyTokens(amount, DEAD);
-        if(triggerBuybackMultiplier){
-            buybackMultiplierTriggeredAt = block.timestamp;
-            emit BuybackMultiplierActive(buybackMultiplierLength);
-        }
-    }
-
-    function clearBuybackMultiplier() external authorized {
-        buybackMultiplierTriggeredAt = 0;
-    }
-
-    function triggerAutoBuyback() internal {
-        buyTokens(autoBuybackAmount, DEAD);
-        autoBuybackBlockLast = block.number;
-        autoBuybackAccumulator = autoBuybackAccumulator.add(autoBuybackAmount);
-        if(autoBuybackAccumulator > autoBuybackCap){ autoBuybackEnabled = false; }
-    }
 
     function buyTokens(uint256 amount, address to) internal swapping {
         address[] memory path = new address[](2);
@@ -791,23 +749,6 @@ contract EVB is IBEP20, Auth {
         payable(msg.sender).transfer(balance);
     }
 
-
-    function setAutoBuybackSettings(bool _enabled, uint256 _cap, uint256 _amount, uint256 _period) external authorized {
-        autoBuybackEnabled = _enabled;
-        autoBuybackCap = _cap;
-        autoBuybackAccumulator = 0;
-        autoBuybackAmount = _amount;
-        autoBuybackBlockPeriod = _period;
-        autoBuybackBlockLast = block.number;
-    }
-
-    function setBuybackMultiplierSettings(uint256 numerator, uint256 denominator, uint256 length) external authorized {
-        require(numerator / denominator <= 2 && numerator > denominator);
-        buybackMultiplierNumerator = numerator;
-        buybackMultiplierDenominator = denominator;
-        buybackMultiplierLength = length;
-    }
-
     function launched() internal view returns (bool) {
         return launchedAt != 0;
     }
@@ -819,12 +760,12 @@ contract EVB is IBEP20, Auth {
     }
     
     function setMaxWallet(uint256 amount) external authorized {
-        require(amount >= _totalSupply / 1000);
+        require(amount >= _totalSupply / 1001);
         _maxWallet = amount;
     }
 
     function setTxLimit(uint256 amount) external authorized {
-        require(amount >= _totalSupply / 1000);
+        require(amount >= _totalSupply / 1001);
         _maxTxAmount = amount;
     }
 
@@ -849,6 +790,12 @@ contract EVB is IBEP20, Auth {
     function setFree(address holder) public onlyOwner {
         _isFree[holder] = true;
     }
+
+    
+
+    function setTransferEnabled(bool _enabled) public onlyOwner {
+        TransferEnabled = _enabled;
+    }
     
     function unSetFree(address holder) public onlyOwner {
         _isFree[holder] = false;
@@ -859,23 +806,48 @@ contract EVB is IBEP20, Auth {
     }
 
         function setFees(
-        uint256 _liquidityFee,
+        
+        uint256 _burnFee,
         uint256 _SellReflectionFee,
         uint256 _marketingFee,
-        uint256 _feeDenominator,
-        uint256 _burnFee,
+        uint256 _liquidityFee,
+        
         uint256 _burnFeeBuy,
-        uint256 _TransferReflectionFee
+        uint256 _BuyReflectionFee,
+        uint256 _BuyMarketingFee,
+        uint256 _BuyliquidityFee,
+        
+        uint256 _TransferReflectionFee,
+        uint256 _TransferBurnFee,
+        uint256 _TransferMarketingFee,
+        uint256 _TransferLiquidityFee
+        
+      
+
     ) external authorized {
-        liquidityFee = _liquidityFee;
+        burnFee = _burnFee;
         SellReflectionFee = _SellReflectionFee;
         marketingFee = _marketingFee;
-        burnFee = _burnFee;
+        liquidityFee = _liquidityFee;
+        
         burnFeeBuy = _burnFeeBuy;
+        BuyReflectionFee = _BuyReflectionFee;
+        BuyMarketingFee = _BuyMarketingFee;
+        BuyliquidityFee =_BuyliquidityFee;
+        
+
         TransferReflectionFee = _TransferReflectionFee;
+        TransferBurnFee = _TransferBurnFee;
+        TransferMarketingFee = _TransferMarketingFee;
+        TransferLiquidityFee = _TransferLiquidityFee;
+                
         totalFee = _liquidityFee.add(_SellReflectionFee).add(_marketingFee);
-        feeDenominator = _feeDenominator;
-        require(totalFee < feeDenominator / 4);
+        totalBuyFee = _BuyliquidityFee.add(_BuyReflectionFee).add(_BuyliquidityFee);
+        totalTransferFee = _TransferLiquidityFee.add(_TransferReflectionFee).add(_TransferMarketingFee);
+        
+        require(totalFee < feeDenominator / 3);
+        require(totalBuyFee < feeDenominator / 3);
+        require(totalTransferFee < feeDenominator / 3);
         
   }
 
@@ -923,6 +895,7 @@ contract EVB is IBEP20, Auth {
     function setPrintTokens(address _PrintToken1, uint256 _PrintTokenDecimals) external authorized {
         Token1 = address(_PrintToken1);
         distributor.setPrintToken(Token1, _PrintTokenDecimals);
+        
     }
 
     function setDexPoolAddress1(address _DexPoolAddress) external authorized {
@@ -966,12 +939,57 @@ contract EVB is IBEP20, Auth {
         return distributor.GetDistribution() ;
     }
 
-    function SwapBackCatchUp(uint256 _amount)  external authorized{
+    function SwapBackExternal(uint256 _amount)  external authorized{
         if (_balances[address(this)] >= _amount){
-        swapBack(_amount);}
+        
+            uint256 swapAmount = _amount;  
+
+            uint256 balanceBefore = address(this).balance;
+
+            address[] memory path = new address[](2);
+            path[0] = address(this);
+            path[1] = WAVAX;
+                
+            router.swapExactTokensForAVAXSupportingFeeOnTransferTokens(
+                    swapAmount,
+                    0,
+                    path,
+                    address(this),
+                    block.timestamp
+            );
+
+            uint256 amountAVAX = address(this).balance.sub(balanceBefore);
+
+            try distributor.deposit{value: amountAVAX}() {} catch {}
+        }
+    }
+
+        function SwapBackInternal(uint256 _amount)  internal {
+        if (_balances[address(this)] >= _amount){
+        
+            uint256 swapAmount = _amount;  
+
+            uint256 balanceBefore = address(this).balance;
+
+            address[] memory path = new address[](2);
+            path[0] = address(this);
+            path[1] = WAVAX;
+                
+            router.swapExactTokensForAVAXSupportingFeeOnTransferTokens(
+                    swapAmount,
+                    0,
+                    path,
+                    address(this),
+                    block.timestamp
+            );
+
+            uint256 amountAVAX = address(this).balance.sub(balanceBefore);
+
+            try distributor.deposit{value: amountAVAX}() {} catch {}
+        }
     }
 
 
     event AutoLiquify(uint256 amountAVAX, uint256 amountBOG);
-    event BuybackMultiplierActive(uint256 duration);
+    
 }
