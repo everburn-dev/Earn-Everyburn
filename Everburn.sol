@@ -419,7 +419,7 @@ contract EVB is IBEP20, Auth {
 
     uint256 public constant MASK = type(uint128).max;
 
-    address Token1 = 0xc7198437980c041c805A1EDcbA50c1Ce5db95118; 
+    address public Token1 = 0xc7198437980c041c805A1EDcbA50c1Ce5db95118; 
     address public WAVAX = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
     
     address DEAD = 0x000000000000000000000000000000000000dEaD;
